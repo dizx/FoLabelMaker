@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass Name="SampleWelcomeService">
+  <Source><![CDATA[
+class SampleWelcomeService
+{
+    public void run()
+    {
+        info("Welcome to the sample model");
+        warning("Please review your setup before continuing.");
+    }
+}
+]]></Source>
+</AxClass>

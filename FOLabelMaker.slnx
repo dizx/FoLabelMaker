@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="FoLabelMaker.Core/FoLabelMaker.Core.csproj" />
+  <Project Path="FoLabelMaker.Cli/FoLabelMaker.Cli.csproj" />
+</Solution>

@@ -1,0 +1,1 @@
+SMP0001=Existing label text

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable Name="SampleCustomerTable">
+  <Label>Sample customer table</Label>
+  <Fields>
+    <AxTableField Name="TrackingStatus">
+      <Label></Label>
+      <HelpText> Shows  current shipment tracking status </HelpText>
+    </AxTableField>
+  </Fields>
+</AxTable>
