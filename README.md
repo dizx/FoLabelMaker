@@ -1,8 +1,8 @@
 # FoLabelMaker
 
-`FoLabelMaker` is a .NET 10 command-line tool for D365 Finance and Operations label work.
+`FoLabelMaker` is a .NET 10 command-line tool for D365 Finance and Operations label maintenance.
 
-It scans FO metadata and X++ source, finds hard-coded user-facing text, creates a safe change plan, updates label files, applies replacements, generates HTML/JSON reports, and can translate labels with OpenAI.
+It scans FO metadata and X++ source, finds hard-coded user-facing text, creates a safe change plan, updates label files, applies replacements, generates JSON and HTML reports, and can translate labels through OpenAI.
 
 ## Projects
 
@@ -11,7 +11,7 @@ It scans FO metadata and X++ source, finds hard-coded user-facing text, creates 
 - `FoLabelMaker.Cli`
   Thin command-line wrapper.
 
-## Output
+## Executable
 
 The built executable is:
 
@@ -25,28 +25,30 @@ Typical build output location:
 FoLabelMaker.Cli\bin\Debug\net10.0\FoLabelMaker.exe
 ```
 
-## What It Does
+## Core Idea
 
-`FoLabelMaker` currently supports these main workflows:
+The tool is intentionally split into separate responsibilities:
 
 1. `scan`
-   Reads metadata and reports hard-coded or missing text.
+   Inspect metadata and report findings.
 2. `plan`
-   Creates a JSON change plan and companion HTML report.
+   Build a safe plan for label replacements and label-file additions.
 3. `apply`
-   Applies a previously created plan to metadata and label files.
+   Apply a previously created plan.
 4. `translate`
-   Creates or updates translated label files using OpenAI.
+   Translate label files.
 5. `improve`
-   Produces suggestions for awkward or inconsistent text.
+   Suggest wording and formatting improvements.
+
+Translation is separate from scan, plan, and apply.
 
 ## Safe Defaults
 
 - `scan` does not change metadata.
 - `plan` does not change metadata.
 - `apply` only changes files from an explicit plan file.
-- backups are created for modified metadata and label files.
-- a changed-files manifest is written during apply.
+- modified metadata and label files get `.bak` backups.
+- `apply` writes a changed-files manifest.
 
 ## Build
 
@@ -54,286 +56,321 @@ FoLabelMaker.Cli\bin\Debug\net10.0\FoLabelMaker.exe
 dotnet build FOLabelMaker.slnx
 ```
 
-## Basic Command Style
+## Command Style
 
-The CLI supports single-dash long options.
+The CLI accepts single-dash long options.
 
 Examples:
 
 ```powershell
-FoLabelMaker scan -model ocr
-FoLabelMaker plan -model ocr
-FoLabelMaker apply -plan ocr-plan.json
-FoLabelMaker translate -model ocr -target-language nb-NO -use-ai
+FoLabelMaker scan -model MyModel
+FoLabelMaker plan -model MyModel
+FoLabelMaker apply -plan mymodel
+FoLabelMaker translate -model MyModel -target-lang no -use-ai
+FoLabelMaker improve -model MyModel
 ```
 
-## How Path Resolution Works
-
-This is important.
-
-### 1. If you pass `-metadata-root`
-
-That path is treated as the target working root for the run.
+Positional model names are also supported for commands that operate on a model.
 
 Examples:
 
-- repo root:
-  `C:\Dev\Peritus OCR`
-- metadata root:
-  `C:\Dev\Peritus OCR\Metadata`
-- exact model path:
-  `C:\Dev\Peritus OCR\Metadata\PTSOCR\PTSOCR`
+```powershell
+FoLabelMaker scan MyModel
+FoLabelMaker plan MyModel
+FoLabelMaker translate MyModel -target-lang no -use-ai
+```
 
-### 2. If you do not pass `-metadata-root`
+## Working Root and Path Resolution
+
+### If you pass `-metadata-root`
+
+That path is treated as the target working root.
+
+It can be:
+
+- a repository root
+- a metadata root
+- an exact model path
+
+### If you do not pass `-metadata-root`
 
 The tool assumes the current directory is the working root.
 
-So if you are already standing in:
-
-```text
-C:\Dev\Peritus OCR
-```
-
-then this is valid:
+So if you are already standing in the target repo root, this works:
 
 ```powershell
-FoLabelMaker scan -model ocr
+FoLabelMaker plan MyModel
 ```
 
-### 3. Model discovery
+### Model discovery
 
-If you pass a repo root, the tool will try to find the model automatically.
+If the working root contains multiple models, pass a model name.
 
-Examples:
+The tool supports:
 
-- `-model PTSOCR`
-- `-model ocr`
+- exact model matching
+- case-insensitive matching
+- case-insensitive contains matching when the result is unambiguous
 
-The tool supports case-insensitive contains matching when there is only one unambiguous match.
+### Ignored technical trees
 
-### 4. Ignored metadata trees
-
-The tool intentionally stays away from technical duplicate metadata trees like:
+The tool intentionally avoids technical duplicate metadata trees such as:
 
 ```text
 XppMetadata
 ```
 
-## Report Output Rules
+## Report Files
 
-### Relative report paths
+### Relative output paths
 
-Relative report paths are written into the requested target root.
+Relative output paths are written to the target working root.
 
-Example:
+### Companion HTML reports
 
-```powershell
-FoLabelMaker scan -metadata-root "C:\Dev\Peritus OCR" -output ocr-scan-report.json
-```
+Whenever a JSON report is written, a companion HTML report is also written.
 
-This creates:
+Examples:
 
 ```text
-C:\Dev\Peritus OCR\ocr-scan-report.json
-C:\Dev\Peritus OCR\ocr-scan-report.html
+mymodel-scan.json
+mymodel-scan-report.html
+
+mymodel-plan.json
+mymodel-plan-report.html
 ```
 
-### If you do not pass `-output`
+The HTML report contains:
 
-Defaults are used:
+- a readable report title
+- created date/time
+- summary cards
+- detailed tables
+- validation details
 
-- `scan` -> `scan-report.json`
-- `plan` -> `plan-report.json`
-- `improve` -> `improvements.json`
+## Default Output Names
 
-Each JSON report also gets a companion HTML report beside it.
+If `-output` is omitted, default names are based on the resolved model name.
 
-Example:
+Examples:
 
-```text
-scan-report.json
-scan-report.html
-```
+- `FoLabelMaker scan -model MyModel`
+  writes:
+  - `mymodel-scan.json`
+  - `mymodel-scan-report.html`
+
+- `FoLabelMaker plan -model MyModel`
+  writes:
+  - `mymodel-plan.json`
+  - `mymodel-plan-report.html`
+
+- `FoLabelMaker improve -model MyModel`
+  writes:
+  - `mymodel-improvements.json`
+  - `mymodel-improvements-report.html`
+
+If no model can be resolved, fallback names use `report`.
 
 ## Commands
 
 ### `scan`
 
-Scans metadata and produces a report.
+Scans metadata and reports:
 
-Example:
-
-```powershell
-FoLabelMaker scan -metadata-root "C:\Dev\Peritus OCR" -model ocr
-```
-
-Typical outputs:
-
-- `scan-report.json`
-- `scan-report.html`
-
-The scan report includes:
-
-- scanned files
-- detected candidates
+- detected user-facing text candidates
 - ignored candidates with reasons
 - missing text proposals
 - improvement suggestions
 - validation errors
 
-### `plan`
-
-Creates a JSON plan of replacements and label-file additions.
-
-Example:
+Examples:
 
 ```powershell
-FoLabelMaker plan -metadata-root "C:\Dev\Peritus OCR" -model ocr
+FoLabelMaker scan -model MyModel
+FoLabelMaker scan MyModel
+FoLabelMaker scan -metadata-root "C:\Dev\MyRepo" -model MyModel
 ```
 
-Typical outputs:
+### `plan`
 
-- `plan-report.json`
-- `plan-report.html`
+Creates a JSON plan of:
 
-The plan includes:
+- metadata replacements
+- X++ string replacements
+- label-file additions
 
-- planned metadata replacements
-- planned X++ replacements
-- planned label-file additions
+The plan also includes:
+
 - missing text proposals
 - ignored candidates
 - validation errors
+
+Examples:
+
+```powershell
+FoLabelMaker plan -model MyModel
+FoLabelMaker plan MyModel
+FoLabelMaker plan -metadata-root "C:\Dev\MyRepo" -model MyModel -output custom-plan.json
+```
+
+`plan` does not translate labels.
 
 ### `apply`
 
 Applies a previously generated plan.
 
-Example:
+Examples:
 
 ```powershell
-FoLabelMaker apply -metadata-root "C:\Dev\Peritus OCR" -plan ocr-plan.json
+FoLabelMaker apply -plan mymodel-plan.json
+FoLabelMaker apply -plan mymodel
+```
+
+If `-plan` is given without an extension and without a path, the tool assumes the default plan file name:
+
+```text
+<value>-plan.json
+```
+
+So this:
+
+```powershell
+FoLabelMaker apply -plan mymodel
+```
+
+resolves to:
+
+```text
+mymodel-plan.json
 ```
 
 Apply behavior:
 
-- modifies metadata files from the plan
+- updates metadata files from the plan
+- updates base-language label files
 - creates `.bak` backups
-- updates label files
 - writes `fo-labelmaker-apply-manifest.json`
+
+`apply` does not perform translation.
 
 ### `translate`
 
 Creates or updates translated label files using OpenAI.
 
-Example:
+Examples:
 
 ```powershell
-FoLabelMaker translate -metadata-root "C:\Dev\Peritus OCR" -model ocr -base-language en-US -target-language nb-NO -use-ai
+FoLabelMaker translate -model MyModel -target-lang no -use-ai
+FoLabelMaker translate MyModel -target-lang no -use-ai
+FoLabelMaker translate -metadata-root "C:\Dev\MyRepo" -model MyModel -base-lang en -target-lang sv
 ```
 
 Translate behavior:
 
-- uses the base-language label file as source
+- reads the base-language label file as source
 - only sends label text and minimal context
 - preserves placeholders like `%1` and `{0}`
 - validates placeholder and line-break preservation
-- writes translated label files in FO layout
+- writes translated label files using FO label-file structure
+
+This is the only command that accepts translation-specific options like:
+
+- `-target-lang`
+- `-target-language`
+- `-use-ai`
+- overwrite translation settings
 
 ### `improve`
 
-Produces text-improvement suggestions without changing files.
+Produces text-improvement suggestions without changing metadata.
 
-Example:
-
-```powershell
-FoLabelMaker improve -metadata-root "C:\Dev\Peritus OCR" -model ocr
-```
-
-## Common Workflows
-
-### Workflow 1: Already in the repo root
-
-If your shell is already in the repo root:
-
-```text
-C:\Dev\Peritus OCR
-```
-
-you can run:
+Examples:
 
 ```powershell
-FoLabelMaker scan -model ocr
-FoLabelMaker plan -model ocr
+FoLabelMaker improve -model MyModel
+FoLabelMaker improve MyModel
 ```
 
-### Workflow 2: Full explicit path
+## Typical Workflows
+
+### Workflow 1: Scan and plan
 
 ```powershell
-FoLabelMaker scan -metadata-root "C:\Dev\Peritus OCR" -model ocr -output ocr-scan-report.json
-FoLabelMaker plan -metadata-root "C:\Dev\Peritus OCR" -model ocr -output ocr-plan.json
-FoLabelMaker apply -metadata-root "C:\Dev\Peritus OCR" -plan ocr-plan.json
+FoLabelMaker scan MyModel
+FoLabelMaker plan MyModel
 ```
 
-### Workflow 3: Create base labels, then translate
+### Workflow 2: Apply a plan
 
 ```powershell
-FoLabelMaker plan -metadata-root "C:\Dev\Peritus OCR" -model ocr -output ocr-plan.json
-FoLabelMaker apply -metadata-root "C:\Dev\Peritus OCR" -plan ocr-plan.json
-FoLabelMaker translate -metadata-root "C:\Dev\Peritus OCR" -model ocr -base-language en-US -target-language nb-NO -use-ai
+FoLabelMaker apply -plan mymodel
+```
+
+### Workflow 3: Translate after base labels exist
+
+```powershell
+FoLabelMaker plan MyModel
+FoLabelMaker apply -plan mymodel
+FoLabelMaker translate MyModel -target-lang no -use-ai
 ```
 
 ## Label File Behavior
 
-### If the model already has label files
+### If label files already exist
 
 The tool tries to reuse the existing D365 FO label-file structure.
 
-Example existing structure:
+Typical structure:
 
 ```text
-AxLabelFile\PTSEHFLabels_en-US.xml
-AxLabelFile\LabelResources\en-US\PTSEHFLabels.en-US.label.txt
+AxLabelFile\MyLabels_en-US.xml
+AxLabelFile\LabelResources\en-US\MyLabels.en-US.label.txt
 ```
 
-In that case the tool should:
+In that case it should:
 
 - add to the existing label text file
 - use the existing label file ID in references
 - continue the existing label ID sequence
 
-### If the model does not yet have label files
+### If no label file exists yet
 
-The tool creates a D365-style structure named after the model.
+The tool creates a model-local FO label-file structure named after the model.
 
-Example for model `PTSOCR`:
+Example pattern:
 
 ```text
-AxLabelFile\PTSOCR_en-US.xml
-AxLabelFile\LabelResources\en-US\PTSOCR.en-US.label.txt
+AxLabelFile\MyModel_en-US.xml
+AxLabelFile\LabelResources\en-US\MyModel.en-US.label.txt
 ```
 
-For translations, the same pattern is used:
+For translations the same structure is used:
 
 ```text
-AxLabelFile\PTSOCR_nb-NO.xml
-AxLabelFile\LabelResources\nb-NO\PTSOCR.nb-NO.label.txt
+AxLabelFile\MyModel_nb-NO.xml
+AxLabelFile\LabelResources\nb-NO\MyModel.nb-NO.label.txt
 ```
 
 ## AI Configuration
 
-The tool supports OpenAI configuration in `appsettings.json`.
+The CLI loads `appsettings.json` at startup.
+
+Lookup order:
+
+1. current working directory
+2. application base directory
 
 Example:
 
 ```json
 {
   "LabelMaker": {
-    "MetadataRootPath": "C:\\Dev\\Peritus OCR",
-    "ModelName": "PTSOCR",
-    "LabelPrefix": "@PTSOCR",
+    "MetadataRootPath": "C:\\Dev\\MyRepo",
+    "ModelName": "MyModel",
+    "LabelPrefix": "@MY",
     "BaseLanguage": "en-US",
     "TargetLanguages": ["nb-NO"],
+    "UseAi": false,
     "ReuseSimilarLabels": false,
     "OverwriteTranslations": false
   },
@@ -351,80 +388,98 @@ Precedence:
 
 1. command-line option
 2. `appsettings.json`
-3. current-directory defaults where applicable
+3. built-in defaults
 
-For OpenAI authentication:
+OpenAI authentication precedence:
 
 1. `OpenAi.ApiKey`
 2. environment variable named by `OpenAi.ApiKeyEnvironmentVariable`
 
+## Language Shortcuts
+
+The CLI supports common language shortcuts and normalizes them.
+
+Examples:
+
+- `en` -> `en-US`
+- `en-us` -> `en-US`
+- `no` -> `nb-NO`
+- `nb` -> `nb-NO`
+- `sv` -> `sv-SE`
+- `da` -> `da-DK`
+- `th` -> `th-TH`
+
+Examples:
+
+```powershell
+FoLabelMaker translate MyModel -target-lang no -use-ai
+FoLabelMaker translate MyModel -base-lang en -target-lang sv
+```
+
 ## What Gets Classified as User-Facing
 
-Examples that are normally treated as user-facing:
+Examples normally treated as user-facing:
 
 - labels
 - captions
 - help text
-- button text
 - menu item text
-- dialog/error/warning text
+- button text
+- error/warning text
 - form/report text
 
-Examples that are normally ignored:
+Examples normally ignored:
 
-- existing labels like `@MyFile:MyLabel123`
+- existing label references such as `@MyFile:MyLabel123`
 - URLs
 - file paths
 - GUIDs
 - SQL fragments
-- placeholders-only text like `%1`
+- placeholders-only strings like `%1`
 - file extensions like `.pfx`
 - technical identifiers in code
 
 ## Reuse Behavior
 
-The tool distinguishes between two reuse cases.
+The reports distinguish between:
 
 ### Existing labels reused
 
-The exact text already exists in the model label file.
+The exact text already exists in a model label file.
 
 ### Duplicate texts consolidated
 
-The same new text appears multiple times in the current scan/plan.
-
-Those occurrences should share the same new label ID.
+The same new text appears multiple times in the current scan or plan, so those occurrences share one label ID.
 
 ## Missing Text Proposals
 
 The tool reports missing labels and captions for important FO elements.
 
-Example:
+Examples of generated proposals:
 
-- `PTSOCRParameters`
-  -> `OCR Parameters`
+- form captions
+- field labels
+- EDT labels
+- menu item labels
+- report labels
 
-These proposals are reported but not silently applied.
+These proposals are reported, not silently applied.
 
-## HTML Reports
+## Translation Progress Feedback
 
-Every JSON report written by the tool also gets a companion HTML report.
+During `translate`, the tool prints progress such as:
 
-Example:
+- preparing translation plan
+- resolved model
+- base language
+- target languages
+- number of translation requests
+- cache hits
+- OpenAI request start
+- OpenAI response status
+- persistence of translated label files
 
-```text
-ocr-plan.json
-ocr-plan.html
-```
-
-The HTML report contains:
-
-- a sensible report title
-- the report file name
-- the created date/time
-- summary cards
-- tables for detected or planned items
-- validation details
+This is intended to make long-running translation steps visible instead of appearing stalled.
 
 ## Exit Codes
 
@@ -433,7 +488,7 @@ The HTML report contains:
 - `1`
   usage or argument problem
 - `2`
-  validation failure or runtime failure
+  validation or runtime failure
 
 ## Troubleshooting
 
@@ -444,54 +499,58 @@ The HTML report contains:
 Wrong:
 
 ```powershell
-FoLabelMaker scan -model ocr -plan
+FoLabelMaker scan -model MyModel -plan
 ```
 
 Right:
 
 ```powershell
-FoLabelMaker plan -model ocr
-FoLabelMaker apply -plan ocr-plan.json
+FoLabelMaker plan MyModel
+FoLabelMaker apply -plan mymodel
 ```
 
 ### `Detected 0 candidates`
 
 Possible reasons:
 
-- the metadata was already labelized by a previous apply run
+- the model was already labelized by a previous apply run
 - the remaining strings are classified as technical
-- you scanned the wrong path or wrong model
+- the wrong path or wrong model was used
 
 ### `429 Too Many Requests`
 
-This comes from OpenAI rate limiting or quota limits.
+This comes from OpenAI throttling or quota limits.
 
 Current behavior:
 
-- translation fails immediately
-- no retry/backoff yet
+- translation stops on the API failure
+- no retry/backoff is implemented yet
 
-### No report file created where expected
+### Default report name is not what you expected
 
-Relative outputs are written to the requested target root.
+Default names are based on the resolved model name.
 
 Examples:
 
-- if target root is `C:\Dev\Peritus OCR`
-- then `scan-report.json` is written to `C:\Dev\Peritus OCR`
+- `FoLabelMaker scan MyModel`
+  -> `mymodel-scan.json`
+- `FoLabelMaker plan MyModel`
+  -> `mymodel-plan.json`
 
-## Current Known Limitations
+If no model can be resolved, the fallback prefix is `report`.
+
+## Current Limitations
 
 - no automatic retry/backoff for OpenAI `429`
-- missing text proposals are reported but not yet turned into applyable changes automatically
-- translation depends on successful OpenAI access at runtime
+- missing-text proposals are not yet automatically converted into applyable changes
+- translation is intentionally separate from scan, plan, and apply
 
-## Sample Commands
+## Quick Examples
 
 ```powershell
-FoLabelMaker scan -model ocr
-FoLabelMaker plan -model ocr
-FoLabelMaker apply -plan plan-report.json
-FoLabelMaker translate -model ocr -base-language en-US -target-language nb-NO -use-ai
-FoLabelMaker improve -model ocr
+FoLabelMaker scan MyModel
+FoLabelMaker plan MyModel
+FoLabelMaker apply -plan mymodel
+FoLabelMaker translate MyModel -target-lang no -use-ai
+FoLabelMaker improve MyModel
 ```
