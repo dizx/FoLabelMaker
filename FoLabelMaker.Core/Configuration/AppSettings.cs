@@ -13,7 +13,6 @@ public sealed class LabelMakerSettings
     public string? LabelPrefix { get; init; }
     public string? BaseLanguage { get; init; }
     public IReadOnlyList<string>? TargetLanguages { get; init; }
-    public bool? UseAi { get; init; }
     public bool? ReuseSimilarLabels { get; init; }
     public bool? OverwriteTranslations { get; init; }
 }

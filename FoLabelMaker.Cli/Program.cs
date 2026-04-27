@@ -16,7 +16,6 @@ internal static class CliProgram
 {
     private static readonly HashSet<string> FlagOptions =
     [
-        "use-ai",
         "overwrite-translations",
         "overwrite",
         "reuse-similar-labels",
@@ -181,7 +180,6 @@ internal static class CliProgram
                 : GetMany(values, "target-language").Count > 0
                     ? GetMany(values, "target-language")
                     : appSettings.LabelMaker.TargetLanguages ?? []),
-            UseAi = GetNullableBool(values, "use-ai") ?? appSettings.LabelMaker.UseAi ?? false,
             OutputPath = GetOptional(values, "output"),
             PlanPath = GetOptional(values, "plan"),
             OpenAiModel = GetOptional(values, "openai-model") ?? appSettings.OpenAi.Model,
@@ -286,7 +284,6 @@ internal static class CliProgram
             LabelPrefix = options.LabelPrefix,
             BaseLanguage = options.BaseLanguage,
             TargetLanguages = options.TargetLanguages,
-            UseAi = options.UseAi,
             ApplyChanges = options.ApplyChanges,
             OverwriteTranslations = options.OverwriteTranslations,
             ReuseSimilarLabels = options.ReuseSimilarLabels,
@@ -305,10 +302,10 @@ internal static class CliProgram
             throw new InvalidOperationException("Option -plan is only valid with the apply command. Use 'plan' as the command when you want to create a plan.");
         }
 
-        var usesTranslationOptions = options.TargetLanguages.Count > 0 || options.UseAi || options.OverwriteTranslations;
+        var usesTranslationOptions = options.TargetLanguages.Count > 0 || options.OverwriteTranslations;
         if (usesTranslationOptions && !string.Equals(command, "translate", StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException("Options -target-lang, -target-language, -use-ai, and translation overwrite settings are only valid with the translate command.");
+            throw new InvalidOperationException("Options -target-lang, -target-language, and translation overwrite settings are only valid with the translate command.");
         }
     }
 
@@ -339,7 +336,6 @@ internal static class CliProgram
             LabelPrefix = options.LabelPrefix,
             BaseLanguage = options.BaseLanguage,
             TargetLanguages = options.TargetLanguages,
-            UseAi = options.UseAi,
             ApplyChanges = options.ApplyChanges,
             OverwriteTranslations = options.OverwriteTranslations,
             ReuseSimilarLabels = options.ReuseSimilarLabels,
@@ -399,7 +395,6 @@ internal static class CliProgram
             LabelPrefix = options.LabelPrefix,
             BaseLanguage = options.BaseLanguage,
             TargetLanguages = options.TargetLanguages,
-            UseAi = options.UseAi,
             ApplyChanges = options.ApplyChanges,
             OverwriteTranslations = options.OverwriteTranslations,
             ReuseSimilarLabels = options.ReuseSimilarLabels,
@@ -478,7 +473,7 @@ internal static class CliProgram
         Console.WriteLine("FoLabelMaker scan -metadata-root <path> -model <modelName> -label-prefix <prefix> -base-lang en-US -output report.json");
         Console.WriteLine("FoLabelMaker plan -metadata-root <path> -model <modelName> -label-prefix <prefix> -base-lang en-US -output label-plan.json");
         Console.WriteLine("FoLabelMaker apply -metadata-root <path> -plan label-plan.json");
-        Console.WriteLine("FoLabelMaker translate -metadata-root <path> -model <modelName> -label-prefix <prefix> -base-lang en-US -target-lang nb-NO -use-ai");
+        Console.WriteLine("FoLabelMaker translate -metadata-root <path> -model <modelName> -label-prefix <prefix> -base-lang en-US -target-lang nb-NO");
         Console.WriteLine("FoLabelMaker improve -metadata-root <path> -model <modelName> -output improvements.json");
     }
 }

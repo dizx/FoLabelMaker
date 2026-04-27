@@ -9,7 +9,6 @@ public sealed class LabelMakerOptions
     public string LabelPrefix { get; init; } = "@LBL";
     public string BaseLanguage { get; init; } = "en-US";
     public IReadOnlyList<string> TargetLanguages { get; init; } = [];
-    public bool UseAi { get; init; }
     public bool ApplyChanges { get; init; }
     public bool OverwriteTranslations { get; init; }
     public bool ReuseSimilarLabels { get; init; }
