@@ -66,7 +66,7 @@ Examples:
 FoLabelMaker scan -model MyModel
 FoLabelMaker plan -model MyModel
 FoLabelMaker apply -plan mymodel
-FoLabelMaker translate -model MyModel -target-lang no -use-ai
+FoLabelMaker translate -model MyModel -target-lang no
 FoLabelMaker improve -model MyModel
 ```
 
@@ -77,7 +77,7 @@ Examples:
 ```powershell
 FoLabelMaker scan MyModel
 FoLabelMaker plan MyModel
-FoLabelMaker translate MyModel -target-lang no -use-ai
+FoLabelMaker translate MyModel -target-lang no
 ```
 
 ## Working Root and Path Resolution
@@ -260,8 +260,8 @@ Creates or updates translated label files using OpenAI.
 Examples:
 
 ```powershell
-FoLabelMaker translate -model MyModel -target-lang no -use-ai
-FoLabelMaker translate MyModel -target-lang no -use-ai
+FoLabelMaker translate -model MyModel -target-lang no
+FoLabelMaker translate MyModel -target-lang no
 FoLabelMaker translate -metadata-root "C:\Dev\MyRepo" -model MyModel -base-lang en -target-lang sv
 ```
 
@@ -277,7 +277,6 @@ This is the only command that accepts translation-specific options like:
 
 - `-target-lang`
 - `-target-language`
-- `-use-ai`
 - overwrite translation settings
 
 ### `improve`
@@ -311,7 +310,7 @@ FoLabelMaker apply -plan mymodel
 ```powershell
 FoLabelMaker plan MyModel
 FoLabelMaker apply -plan mymodel
-FoLabelMaker translate MyModel -target-lang no -use-ai
+FoLabelMaker translate MyModel -target-lang no
 ```
 
 ## Label File Behavior
@@ -370,7 +369,6 @@ Example:
     "LabelPrefix": "@MY",
     "BaseLanguage": "en-US",
     "TargetLanguages": ["nb-NO"],
-    "UseAi": false,
     "ReuseSimilarLabels": false,
     "OverwriteTranslations": false
   },
@@ -412,7 +410,7 @@ Examples:
 Examples:
 
 ```powershell
-FoLabelMaker translate MyModel -target-lang no -use-ai
+FoLabelMaker translate MyModel -target-lang no
 FoLabelMaker translate MyModel -base-lang en -target-lang sv
 ```
 
@@ -551,6 +549,6 @@ If no model can be resolved, the fallback prefix is `report`.
 FoLabelMaker scan MyModel
 FoLabelMaker plan MyModel
 FoLabelMaker apply -plan mymodel
-FoLabelMaker translate MyModel -target-lang no -use-ai
+FoLabelMaker translate MyModel -target-lang no
 FoLabelMaker improve MyModel
 ```
