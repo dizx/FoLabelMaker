@@ -39,6 +39,8 @@ The tool is intentionally split into separate responsibilities:
    Translate label files.
 5. `improve`
    Suggest wording and formatting improvements.
+6. `merge`
+   Merge label IDs across and within label files.
 
 Translation is separate from scan, plan, and apply.
 
@@ -47,6 +49,7 @@ Translation is separate from scan, plan, and apply.
 - `scan` does not change metadata.
 - `plan` does not change metadata.
 - `apply` only changes files from an explicit plan file.
+- `merge` is dry-run by default and only writes files when `-apply` is passed.
 - modified metadata and label files get `.bak` backups.
 - `apply` writes a changed-files manifest.
 
@@ -68,6 +71,7 @@ FoLabelMaker plan -model MyModel
 FoLabelMaker apply -plan mymodel
 FoLabelMaker translate -model MyModel -target-lang no
 FoLabelMaker improve -model MyModel
+FoLabelMaker merge -model MyModel -label-prefix MYMODEL -source-prefix NewLabel
 ```
 
 Positional model names are also supported for commands that operate on a model.
@@ -168,6 +172,11 @@ Examples:
   writes:
   - `mymodel-improvements.json`
   - `mymodel-improvements-report.html`
+
+- `FoLabelMaker merge -model MyModel`
+  writes:
+  - `mymodel-merge.json`
+  - `mymodel-merge-report.html`
 
 If no model can be resolved, fallback names use `report`.
 
@@ -289,6 +298,35 @@ Examples:
 FoLabelMaker improve -model MyModel
 FoLabelMaker improve MyModel
 ```
+
+### `merge`
+
+Plans or applies label ID merges across label files and within one label file.
+
+Examples:
+
+```powershell
+FoLabelMaker merge -model MyModel -label-prefix MYMODEL
+FoLabelMaker merge -model MyModel -label-prefix MYMODEL -source-prefix NewLabel
+FoLabelMaker merge -model MyModel -label-prefix MYMODEL -source-label-file OLDLBL -apply
+```
+
+Merge behavior:
+
+- rewrites references such as `@MYMODEL:NewLabel43` to a target-prefix label ID
+- reuses an existing target label when the text already exists
+- creates new target-prefix IDs when needed
+- removes merged source entries from label files
+- handles same-file merges and cross-file merges
+- creates `.bak` backups when `-apply` is used
+
+By default, `merge` is a dry run. Pass `-apply` to write metadata and label-file changes.
+
+Source filters are optional:
+
+- `-source-prefix NewLabel` limits the merge to source label IDs beginning with `NewLabel`
+- `-source-label-file OLDLBL` limits the merge to a source label file ID
+- if no source filter is provided, all non-target label IDs are considered merge candidates
 
 ## Typical Workflows
 

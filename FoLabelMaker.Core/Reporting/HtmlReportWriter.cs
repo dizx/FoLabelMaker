@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FoLabelMaker.Core.Ai;
+using FoLabelMaker.Core.Merging;
 using FoLabelMaker.Core.Planning;
 using FoLabelMaker.Core.Scanning;
 
@@ -44,6 +45,7 @@ public sealed class HtmlReportWriter
         {
             ScanReport scanReport => BuildScanHtml(scanReport, fileName, createdAt),
             LabelChangePlan labelChangePlan => BuildPlanHtml(labelChangePlan, fileName, createdAt),
+            LabelMergeReport mergeReport => BuildMergeHtml(mergeReport, fileName, createdAt),
             IReadOnlyList<TextImprovementResult> improvements => BuildImprovementsHtml(improvements, fileName, createdAt),
             _ => BuildRawHtml(report, fileName, createdAt),
         };
@@ -95,6 +97,22 @@ public sealed class HtmlReportWriter
         body.Append(SummaryCards([("Improvements", improvements.Count.ToString())]));
         body.Append(Section("Improvement Suggestions", ImprovementTable(improvements)));
         return WrapHtml("FoLabelMaker Improvement Report", fileName, createdAt, body.ToString());
+    }
+
+    private string BuildMergeHtml(LabelMergeReport report, string fileName, DateTimeOffset createdAt)
+    {
+        var body = new StringBuilder();
+        body.Append($"<div class='meta'><strong>Model:</strong> {Encode(report.ModelName)}<br><strong>Model Root:</strong> <code>{Encode(report.ModelRootPath)}</code><br><strong>Target Label File Id:</strong> <code>{Encode(report.TargetLabelFileId)}</code><br><strong>Mode:</strong> {Encode(report.Applied ? "Applied" : "Dry run")}</div>");
+        body.Append(SummaryCards([
+            ("Mappings", report.Mappings.Count.ToString()),
+            ("Changed Files", report.ChangedFiles.Count.ToString()),
+            ("Validation Errors", report.ValidationErrors.Count.ToString()),
+            ("Applied", report.Applied ? "Yes" : "No")
+        ]));
+        body.Append(Section("Label Mappings", MergeMappingTable(report.Mappings)));
+        body.Append(Section("Changed Files", StringList(report.ChangedFiles)));
+        body.Append(Section("Validation Errors", StringList(report.ValidationErrors)));
+        return WrapHtml($"FoLabelMaker Merge Report for {report.ModelName}", fileName, createdAt, body.ToString());
     }
 
     private string BuildRawHtml<TReport>(TReport report, string fileName, DateTimeOffset createdAt)
@@ -168,6 +186,19 @@ public sealed class HtmlReportWriter
         var rows = improvementList.Select(improvement =>
             $"<tr><td><code>{Encode(improvement.SourceFilePath)}</code></td><td>{Encode(improvement.OriginalText)}</td><td>{Encode(improvement.SuggestedText)}</td><td>{Encode(improvement.Confidence.ToString("P0"))}</td><td>{Encode(improvement.Reason)}</td></tr>");
         return Table(["File", "Original", "Suggested", "Confidence", "Reason"], rows);
+    }
+
+    private static string MergeMappingTable(IEnumerable<LabelMergeMapping> mappings)
+    {
+        var mappingList = mappings.ToList();
+        if (mappingList.Count == 0)
+        {
+            return Empty("No label mappings.");
+        }
+
+        var rows = mappingList.Select(mapping =>
+            $"<tr><td><code>{Encode(mapping.SourceReference)}</code></td><td><code>{Encode(mapping.TargetReference)}</code></td><td>{Encode(mapping.Text)}</td><td>{Encode(mapping.Reason)}</td></tr>");
+        return Table(["Source", "Target", "Text", "Reason"], rows);
     }
 
     private static string StringList(IEnumerable<string> values)
