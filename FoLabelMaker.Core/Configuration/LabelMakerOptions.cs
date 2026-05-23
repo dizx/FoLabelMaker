@@ -10,6 +10,7 @@ public sealed class LabelMakerOptions
     public string BaseLanguage { get; init; } = "en-US";
     public IReadOnlyList<string> TargetLanguages { get; init; } = [];
     public bool ApplyChanges { get; init; }
+    public bool FixMismatchedTranslations { get; init; }
     public bool OverwriteTranslations { get; init; }
     public bool ReuseSimilarLabels { get; init; }
     public bool AllowCreateLabelFile { get; init; } = true;
@@ -17,6 +18,8 @@ public sealed class LabelMakerOptions
     public string? OutputPath { get; init; }
     public string? PlanPath { get; init; }
     public string? OpenAiModel { get; init; }
+    public string? ExpectedLanguage { get; init; }
+    public string? StartLabelId { get; init; }
     public IReadOnlyList<string> SourceLabelPrefixes { get; init; } = [];
     public IReadOnlyList<string> SourceLabelFileIds { get; init; } = [];
 

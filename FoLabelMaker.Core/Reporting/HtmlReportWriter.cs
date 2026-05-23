@@ -60,12 +60,14 @@ public sealed class HtmlReportWriter
             ("Ignored", report.IgnoredCandidates.Count.ToString()),
             ("Missing Text", report.MissingTextProposals.Count.ToString()),
             ("Improvements", report.ImprovementSuggestions.Count.ToString()),
+            ("Language Mismatches", report.LanguageMismatches.Count.ToString()),
             ("Validation Errors", report.ValidationErrors.Count.ToString())
         ]));
         body.Append(Section("Detected Candidates", CandidateTable(report.DetectedCandidates)));
         body.Append(Section("Ignored Candidates (Not Planned)", CandidateTable(report.IgnoredCandidates)));
         body.Append(Section("Missing Text Proposals", CandidateTable(report.MissingTextProposals)));
         body.Append(Section("Improvement Suggestions", ImprovementTable(report.ImprovementSuggestions)));
+        body.Append(Section("Language Mismatches", LanguageMismatchTable(report.LanguageMismatches)));
         body.Append(Section("Validation Errors", StringList(report.ValidationErrors)));
         return WrapHtml("FoLabelMaker Scan Report", fileName, createdAt, body.ToString());
     }
@@ -81,12 +83,14 @@ public sealed class HtmlReportWriter
             ("Label Adds", plan.LabelFileChanges.Count.ToString()),
             ("Missing Text", report.MissingTextProposals.Count.ToString()),
             ("Improvements", report.ImprovementSuggestions.Count.ToString()),
+            ("Language Mismatches", report.LanguageMismatches.Count.ToString()),
             ("Validation Errors", report.ValidationErrors.Count.ToString())
         ]));
         body.Append(Section("Planned Replacements", PlanChangeTable(plan.Changes)));
         body.Append(Section("Label File Adds", LabelFileChangeTable(plan.LabelFileChanges)));
         body.Append(Section("Missing Text Proposals", CandidateTable(report.MissingTextProposals)));
         body.Append(Section("Ignored Candidates", CandidateTable(report.IgnoredCandidates)));
+        body.Append(Section("Language Mismatches", LanguageMismatchTable(report.LanguageMismatches)));
         body.Append(Section("Validation Errors", StringList(report.ValidationErrors)));
         return WrapHtml($"FoLabelMaker Plan Report for {plan.ModelName}", fileName, createdAt, body.ToString());
     }
@@ -186,6 +190,19 @@ public sealed class HtmlReportWriter
         var rows = improvementList.Select(improvement =>
             $"<tr><td><code>{Encode(improvement.SourceFilePath)}</code></td><td>{Encode(improvement.OriginalText)}</td><td>{Encode(improvement.SuggestedText)}</td><td>{Encode(improvement.Confidence.ToString("P0"))}</td><td>{Encode(improvement.Reason)}</td></tr>");
         return Table(["File", "Original", "Suggested", "Confidence", "Reason"], rows);
+    }
+
+    private static string LanguageMismatchTable(IEnumerable<LanguageMismatchResult> mismatches)
+    {
+        var mismatchList = mismatches.ToList();
+        if (mismatchList.Count == 0)
+        {
+            return Empty("No language mismatches.");
+        }
+
+        var rows = mismatchList.Select(mismatch =>
+            $"<tr><td><code>{Encode(mismatch.SourceFilePath)}</code></td><td>{Encode(mismatch.LineNumber?.ToString() ?? string.Empty)}</td><td>{Encode(mismatch.ElementType)}</td><td>{Encode(mismatch.ElementName)}</td><td>{Encode(mismatch.PropertyOrMethod)}</td><td>{Encode(mismatch.Text)}</td><td>{Encode(mismatch.ExpectedLanguage)}</td><td>{Encode(mismatch.DetectedLanguage)}</td></tr>");
+        return Table(["File", "Line", "Element Type", "Element Name", "Property", "Text", "Expected", "Detected"], rows);
     }
 
     private static string MergeMappingTable(IEnumerable<LabelMergeMapping> mappings)

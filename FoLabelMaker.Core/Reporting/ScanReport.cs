@@ -11,6 +11,19 @@ public sealed class ScanReport
     public IList<string> ValidationErrors { get; init; } = [];
     public IList<TextCandidate> MissingTextProposals { get; init; } = [];
     public IList<TextImprovementResult> ImprovementSuggestions { get; init; } = [];
+    public IList<LanguageMismatchResult> LanguageMismatches { get; init; } = [];
+}
+
+public sealed class LanguageMismatchResult
+{
+    public required string SourceFilePath { get; init; }
+    public int? LineNumber { get; init; }
+    public required string ElementType { get; init; }
+    public required string ElementName { get; init; }
+    public required string PropertyOrMethod { get; init; }
+    public required string Text { get; init; }
+    public required string ExpectedLanguage { get; init; }
+    public required string DetectedLanguage { get; init; }
 }
 
 public sealed class PlanReport

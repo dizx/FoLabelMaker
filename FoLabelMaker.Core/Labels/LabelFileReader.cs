@@ -91,8 +91,9 @@ public sealed partial class LabelFileReader
     {
         var lines = await File.ReadAllLinesAsync(filePath, cancellationToken);
         var entries = new List<LabelEntry>();
-        foreach (var line in lines)
+        for (var index = 0; index < lines.Length; index++)
         {
+            var line = lines[index];
             if (string.IsNullOrWhiteSpace(line) || line.StartsWith('#'))
             {
                 continue;
@@ -108,6 +109,7 @@ public sealed partial class LabelFileReader
             {
                 Id = line[..separatorIndex].Trim(),
                 Text = line[(separatorIndex + 1)..],
+                LineNumber = index + 1,
             });
         }
 

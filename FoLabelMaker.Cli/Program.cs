@@ -3,6 +3,7 @@ using FoLabelMaker.Core.Ai;
 using FoLabelMaker.Core.Configuration;
 using FoLabelMaker.Core.Improvement;
 using FoLabelMaker.Core.Labels;
+using FoLabelMaker.Core.Language;
 using FoLabelMaker.Core.Merging;
 using FoLabelMaker.Core.Metadata;
 using FoLabelMaker.Core.Planning;
@@ -22,6 +23,7 @@ internal static class CliProgram
         "reuse-similar-labels",
         "reuse-similar",
         "apply",
+        "fix",
     ];
 
     private static readonly Dictionary<string, string> LanguageAliases = new(StringComparer.OrdinalIgnoreCase)
@@ -82,7 +84,7 @@ internal static class CliProgram
             {
                 case "scan":
                     var scanReport = await service.ScanAsync(options, cancellationTokenSource.Token);
-                    Console.WriteLine($"Scanned {scanReport.ScannedFiles.Count} files. Detected {scanReport.DetectedCandidates.Count} candidates. Ignored {scanReport.IgnoredCandidates.Count} candidates.");
+                    Console.WriteLine($"Scanned {scanReport.ScannedFiles.Count} files. Detected {scanReport.DetectedCandidates.Count} candidates. Ignored {scanReport.IgnoredCandidates.Count} candidates. Language mismatches {scanReport.LanguageMismatches.Count}.");
                     return scanReport.ValidationErrors.Count == 0 ? 0 : 2;
                 case "plan":
                     var (_, planReport) = await service.PlanAsync(options, cancellationTokenSource.Token);
@@ -194,9 +196,12 @@ internal static class CliProgram
             OutputPath = GetOptional(values, "output"),
             PlanPath = GetOptional(values, "plan"),
             OpenAiModel = GetOptional(values, "openai-model") ?? appSettings.OpenAi.Model,
+            ExpectedLanguage = NormalizeOptionalLanguage(GetOptional(values, "lang") ?? GetOptional(values, "language")),
+            StartLabelId = GetOptional(values, "start-label") ?? GetOptional(values, "start-label-id"),
             SourceLabelPrefixes = GetMany(values, "source-prefix").Concat(GetMany(values, "source-label-prefix")).ToList(),
             SourceLabelFileIds = GetMany(values, "source-file").Concat(GetMany(values, "source-label-file")).ToList(),
             ApplyChanges = GetBool(values, "apply"),
+            FixMismatchedTranslations = GetBool(values, "fix"),
             OverwriteTranslations = GetNullableBool(values, "overwrite") ?? GetNullableBool(values, "overwrite-translations") ?? appSettings.LabelMaker.OverwriteTranslations ?? false,
             ReuseSimilarLabels = GetNullableBool(values, "reuse-similar") ?? GetNullableBool(values, "reuse-similar-labels") ?? appSettings.LabelMaker.ReuseSimilarLabels ?? false,
         };
@@ -233,7 +238,8 @@ internal static class CliProgram
             new TextImprovementSuggester(),
             new OpenAiTextAiService(new HttpClient(), openAiOptions),
             labelFileWriter,
-            new LabelMerger(labelFileReader, labelFileWriter, new LabelIdGenerator()));
+            new LabelMerger(labelFileReader, labelFileWriter, new LabelIdGenerator()),
+            new LanguageDetector());
     }
 
     private static string? GetOptional(Dictionary<string, List<string>> values, string key) => values.TryGetValue(key, out var entries) ? entries.LastOrDefault() : null;
@@ -245,6 +251,8 @@ internal static class CliProgram
     private static bool? GetNullableBool(Dictionary<string, List<string>> values, string key) => values.TryGetValue(key, out var entries) ? entries.LastOrDefault() is "true" : null;
 
     private static IReadOnlyList<string> NormalizeLanguages(IReadOnlyList<string> languages) => languages.Select(NormalizeLanguage).ToList();
+
+    private static string? NormalizeOptionalLanguage(string? language) => string.IsNullOrWhiteSpace(language) ? null : NormalizeLanguage(language);
 
     private static string NormalizeLanguage(string language)
     {
@@ -301,6 +309,7 @@ internal static class CliProgram
             BaseLanguage = options.BaseLanguage,
             TargetLanguages = options.TargetLanguages,
             ApplyChanges = options.ApplyChanges,
+            FixMismatchedTranslations = options.FixMismatchedTranslations,
             OverwriteTranslations = options.OverwriteTranslations,
             ReuseSimilarLabels = options.ReuseSimilarLabels,
             AllowCreateLabelFile = options.AllowCreateLabelFile,
@@ -308,6 +317,8 @@ internal static class CliProgram
             OutputPath = defaultOutputPath,
             PlanPath = options.PlanPath,
             OpenAiModel = options.OpenAiModel,
+            ExpectedLanguage = options.ExpectedLanguage,
+            StartLabelId = options.StartLabelId,
             SourceLabelPrefixes = options.SourceLabelPrefixes,
             SourceLabelFileIds = options.SourceLabelFileIds,
         };
@@ -324,6 +335,16 @@ internal static class CliProgram
         if (usesTranslationOptions && !string.Equals(command, "translate", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException("Options -target-lang, -target-language, and translation overwrite settings are only valid with the translate command.");
+        }
+
+        if (options.FixMismatchedTranslations && !string.Equals(command, "translate", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Option -fix is only valid with the translate command.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.StartLabelId) && !string.Equals(command, "translate", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Option -start-label is only valid with the translate command.");
         }
 
         if (options.ApplyChanges && !string.Equals(command, "merge", StringComparison.OrdinalIgnoreCase))
@@ -366,6 +387,7 @@ internal static class CliProgram
             BaseLanguage = options.BaseLanguage,
             TargetLanguages = options.TargetLanguages,
             ApplyChanges = options.ApplyChanges,
+            FixMismatchedTranslations = options.FixMismatchedTranslations,
             OverwriteTranslations = options.OverwriteTranslations,
             ReuseSimilarLabels = options.ReuseSimilarLabels,
             AllowCreateLabelFile = options.AllowCreateLabelFile,
@@ -373,6 +395,8 @@ internal static class CliProgram
             OutputPath = options.OutputPath,
             PlanPath = resolvedPlanPath,
             OpenAiModel = options.OpenAiModel,
+            ExpectedLanguage = options.ExpectedLanguage,
+            StartLabelId = options.StartLabelId,
             SourceLabelPrefixes = options.SourceLabelPrefixes,
             SourceLabelFileIds = options.SourceLabelFileIds,
         };
@@ -427,6 +451,7 @@ internal static class CliProgram
             BaseLanguage = options.BaseLanguage,
             TargetLanguages = options.TargetLanguages,
             ApplyChanges = options.ApplyChanges,
+            FixMismatchedTranslations = options.FixMismatchedTranslations,
             OverwriteTranslations = options.OverwriteTranslations,
             ReuseSimilarLabels = options.ReuseSimilarLabels,
             AllowCreateLabelFile = options.AllowCreateLabelFile,
@@ -434,6 +459,8 @@ internal static class CliProgram
             OutputPath = options.OutputPath,
             PlanPath = options.PlanPath,
             OpenAiModel = options.OpenAiModel,
+            ExpectedLanguage = options.ExpectedLanguage,
+            StartLabelId = options.StartLabelId,
             SourceLabelPrefixes = options.SourceLabelPrefixes,
             SourceLabelFileIds = options.SourceLabelFileIds,
         };
@@ -503,10 +530,10 @@ internal static class CliProgram
 
     private static void PrintUsage()
     {
-        Console.WriteLine("FoLabelMaker scan -metadata-root <path> -model <modelName> -label-prefix <prefix> -base-lang en-US -output report.json");
+        Console.WriteLine("FoLabelMaker scan -metadata-root <path> -model <modelName> -label-prefix <prefix> -base-lang en-US [-lang nb-NO] -output report.json");
         Console.WriteLine("FoLabelMaker plan -metadata-root <path> -model <modelName> -label-prefix <prefix> -base-lang en-US -output label-plan.json");
         Console.WriteLine("FoLabelMaker apply -metadata-root <path> -plan label-plan.json");
-        Console.WriteLine("FoLabelMaker translate -metadata-root <path> -model <modelName> -label-prefix <prefix> -base-lang en-US -target-lang nb-NO");
+        Console.WriteLine("FoLabelMaker translate -metadata-root <path> -model <modelName> -label-prefix <prefix> -base-lang en-US -target-lang nb-NO [-fix] [-start-label PTSIF1068]");
         Console.WriteLine("FoLabelMaker improve -metadata-root <path> -model <modelName> -output improvements.json");
         Console.WriteLine("FoLabelMaker merge -metadata-root <path> -model <modelName> -label-prefix <targetFileId> -base-lang nb-NO [-source-prefix NewLabel] [-apply]");
     }

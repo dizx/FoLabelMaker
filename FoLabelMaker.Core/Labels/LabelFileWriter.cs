@@ -29,7 +29,7 @@ public sealed class LabelFileWriter
 
         await File.WriteAllTextAsync(labelFile.FilePath, builder.ToString(), cancellationToken);
 
-        if (!string.IsNullOrWhiteSpace(labelFile.DescriptorFilePath))
+        if (!string.IsNullOrWhiteSpace(labelFile.DescriptorFilePath) && !File.Exists(labelFile.DescriptorFilePath))
         {
             await WriteDescriptorAsync(labelFile, cancellationToken);
         }
@@ -54,6 +54,7 @@ public sealed class LabelFileWriter
                 new XElement("Name", $"{labelFile.FileId}_{labelFile.Language}"),
                 new XElement("LabelContentFileName", Path.GetFileName(labelFile.FilePath)),
                 new XElement("LabelFileId", labelFile.FileId),
+                new XElement("Language", labelFile.Language),
                 new XElement("RelativeUriInModelStore", relativeUriInModelStore)));
 
         await using var stream = File.Create(labelFile.DescriptorFilePath!);

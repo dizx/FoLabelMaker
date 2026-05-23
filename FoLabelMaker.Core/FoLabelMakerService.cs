@@ -3,6 +3,7 @@ using FoLabelMaker.Core.Ai;
 using FoLabelMaker.Core.Configuration;
 using FoLabelMaker.Core.Improvement;
 using FoLabelMaker.Core.Labels;
+using FoLabelMaker.Core.Language;
 using FoLabelMaker.Core.Merging;
 using FoLabelMaker.Core.Planning;
 using FoLabelMaker.Core.Reporting;
@@ -22,6 +23,7 @@ public sealed class FoLabelMakerService
     private readonly ITextAiService _textAiService;
     private readonly LabelFileWriter _labelFileWriter;
     private readonly LabelMerger _labelMerger;
+    private readonly LanguageDetector _languageDetector;
 
     public FoLabelMakerService(
         MetadataScanner metadataScanner,
@@ -33,7 +35,8 @@ public sealed class FoLabelMakerService
         TextImprovementSuggester textImprovementSuggester,
         ITextAiService textAiService,
         LabelFileWriter labelFileWriter,
-        LabelMerger labelMerger)
+        LabelMerger labelMerger,
+        LanguageDetector languageDetector)
     {
         _metadataScanner = metadataScanner;
         _labelFileReader = labelFileReader;
@@ -45,6 +48,7 @@ public sealed class FoLabelMakerService
         _textAiService = textAiService;
         _labelFileWriter = labelFileWriter;
         _labelMerger = labelMerger;
+        _languageDetector = languageDetector;
     }
 
     public async Task<ScanReport> ScanAsync(LabelMakerOptions options, CancellationToken cancellationToken)
@@ -54,6 +58,9 @@ public sealed class FoLabelMakerService
         {
             scanResult.Report.ImprovementSuggestions.Add(suggestion);
         }
+
+        AddLanguageMismatches(scanResult.Report, options.ExpectedLanguage);
+        await AddLabelFileLanguageMismatchesAsync(scanResult.Report, scanResult.ModelRootPath, options.ExpectedLanguage, cancellationToken);
 
         if (!string.IsNullOrWhiteSpace(options.OutputPath))
         {
@@ -77,6 +84,9 @@ public sealed class FoLabelMakerService
         {
             scanResult.Report.ImprovementSuggestions.Add(suggestion);
         }
+
+        AddLanguageMismatches(scanResult.Report, options.ExpectedLanguage);
+        await AddLabelFileLanguageMismatchesAsync(scanResult.Report, scanResult.ModelRootPath, options.ExpectedLanguage, cancellationToken);
 
         var existingLabels = await _labelFileReader.ReadAsync(scanResult.ModelRootPath, cancellationToken);
         var plan = _labelPlanBuilder.Build(options, scanResult.ModelRootPath, scanResult.Report.DetectedCandidates.ToList(), existingLabels, scanResult.Report);
@@ -230,12 +240,45 @@ public sealed class FoLabelMakerService
                     string.Equals(file.FileId, plan.LabelPrefix, StringComparison.OrdinalIgnoreCase))
                 ?? (targetLanguageFiles.Count == 1 ? targetLanguageFiles[0] : null);
 
-            foreach (var baseEntry in baseEntries)
+            var directlyFixedLabelIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (options.FixMismatchedTranslations && targetLabelFile is not null)
+            {
+                foreach (var targetEntry in targetLabelFile.Entries.Where(entry => IsAtOrAfterStartLabel(entry.Id, options.StartLabelId)))
+                {
+                    if (!_languageDetector.IsMismatch(targetEntry.Text, targetLanguage, out var detectedLanguage) || string.IsNullOrWhiteSpace(detectedLanguage))
+                    {
+                        continue;
+                    }
+
+                    Console.WriteLine($"Fixing mismatched translation {targetEntry.Id}: detected {detectedLanguage}, expected {targetLanguage}.");
+                    directlyFixedLabelIds.Add(targetEntry.Id);
+                    translationRequests.Add(new TranslationRequest
+                    {
+                        LabelId = targetEntry.Id,
+                        SourceLanguage = detectedLanguage,
+                        TargetLanguage = targetLanguage,
+                        Text = targetEntry.Text,
+                        Context = $"{plan.ModelName}:{targetEntry.Id}",
+                    });
+                }
+            }
+
+            foreach (var baseEntry in baseEntries.Where(entry => IsAtOrAfterStartLabel(entry.Id, options.StartLabelId)))
             {
                 var targetEntry = targetLabelFile?.Entries.FirstOrDefault(entry => string.Equals(entry.Id, baseEntry.Id, StringComparison.OrdinalIgnoreCase));
                 if (targetEntry is not null && !options.OverwriteTranslations)
                 {
-                    continue;
+                    if (directlyFixedLabelIds.Contains(targetEntry.Id))
+                    {
+                        continue;
+                    }
+
+                    if (!options.FixMismatchedTranslations || !_languageDetector.IsMismatch(targetEntry.Text, targetLanguage, out var detectedLanguage))
+                    {
+                        continue;
+                    }
+
+                    Console.WriteLine($"Fixing mismatched translation {baseEntry.Id}: detected {detectedLanguage}, expected {targetLanguage}.");
                 }
 
                 translationRequests.Add(new TranslationRequest
@@ -259,8 +302,52 @@ public sealed class FoLabelMakerService
             .Select(group => $"{group.Key}: {group.Count()}")
             .ToArray();
         Console.WriteLine($"Preparing {translationRequests.Count} translation requests ({string.Join(", ", cachedTargetCount)}).");
+        if (!string.IsNullOrWhiteSpace(options.StartLabelId))
+        {
+            Console.WriteLine($"Start label filter: {options.StartLabelId}");
+        }
 
         return await _textAiService.TranslateAsync(translationRequests, cancellationToken);
+    }
+
+    private static bool IsAtOrAfterStartLabel(string labelId, string? startLabelId)
+    {
+        if (string.IsNullOrWhiteSpace(startLabelId))
+        {
+            return true;
+        }
+
+        var current = ParseLabelId(labelId);
+        var start = ParseLabelId(startLabelId);
+        if (current is null || start is null)
+        {
+            return string.Compare(labelId, startLabelId, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        var (currentPrefix, currentNumber) = current.Value;
+        var (startPrefix, startNumber) = start.Value;
+        if (!string.Equals(currentPrefix, startPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return currentNumber >= startNumber;
+    }
+
+    private static (string Prefix, int Number)? ParseLabelId(string labelId)
+    {
+        var splitIndex = labelId.Length;
+        while (splitIndex > 0 && char.IsDigit(labelId[splitIndex - 1]))
+        {
+            splitIndex--;
+        }
+
+        if (splitIndex == labelId.Length || splitIndex == 0 || !int.TryParse(labelId[splitIndex..], out var number))
+        {
+            return null;
+        }
+
+        return (labelId[..splitIndex], number);
     }
 
     private async Task PersistTranslationsAsync(
@@ -292,7 +379,7 @@ public sealed class FoLabelMakerService
                 var existingEntry = labelFile.Entries.FirstOrDefault(entry => string.Equals(entry.Id, translation.LabelId, StringComparison.OrdinalIgnoreCase));
                 if (existingEntry is not null)
                 {
-                    if (options.OverwriteTranslations)
+                    if (options.OverwriteTranslations || options.FixMismatchedTranslations)
                     {
                         existingEntry.Text = translation.Text;
                     }
@@ -306,4 +393,73 @@ public sealed class FoLabelMakerService
             await _labelFileWriter.WriteAsync(labelFile, cancellationToken);
         }
     }
+
+    private void AddLanguageMismatches(ScanReport report, string? expectedLanguage)
+    {
+        if (string.IsNullOrWhiteSpace(expectedLanguage))
+        {
+            return;
+        }
+
+        foreach (var candidate in report.DetectedCandidates)
+        {
+            if (!_languageDetector.IsMismatch(candidate.OriginalText, expectedLanguage, out var detectedLanguage) || string.IsNullOrWhiteSpace(detectedLanguage))
+            {
+                continue;
+            }
+
+            report.LanguageMismatches.Add(new LanguageMismatchResult
+            {
+                SourceFilePath = candidate.SourceFilePath,
+                LineNumber = candidate.LineNumber,
+                ElementType = candidate.ElementType,
+                ElementName = candidate.ElementName,
+                PropertyOrMethod = candidate.PropertyOrMethod,
+                Text = candidate.OriginalText,
+                ExpectedLanguage = expectedLanguage,
+                DetectedLanguage = detectedLanguage,
+            });
+        }
+    }
+
+    private async Task AddLabelFileLanguageMismatchesAsync(ScanReport report, string modelRootPath, string? expectedLanguage, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(expectedLanguage))
+        {
+            return;
+        }
+
+        var labelFiles = await _labelFileReader.ReadAsync(modelRootPath, cancellationToken);
+        foreach (var labelFile in labelFiles.Where(file => IsSameLanguage(file.Language, expectedLanguage)))
+        {
+            foreach (var entry in labelFile.Entries)
+            {
+                if (!_languageDetector.IsMismatch(entry.Text, expectedLanguage, out var detectedLanguage) || string.IsNullOrWhiteSpace(detectedLanguage))
+                {
+                    continue;
+                }
+
+                report.LanguageMismatches.Add(new LanguageMismatchResult
+                {
+                    SourceFilePath = labelFile.FilePath,
+                    LineNumber = entry.LineNumber,
+                    ElementType = "AxLabelFile",
+                    ElementName = entry.Id,
+                    PropertyOrMethod = labelFile.FileId,
+                    Text = entry.Text,
+                    ExpectedLanguage = expectedLanguage,
+                    DetectedLanguage = detectedLanguage,
+                });
+            }
+        }
+    }
+
+    private static bool IsSameLanguage(string language, string expectedLanguage) => NormalizeLanguage(language) == NormalizeLanguage(expectedLanguage);
+
+    private static string NormalizeLanguage(string language) => language.Split(['-', '_'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.ToLowerInvariant() switch
+    {
+        "no" or "nb" or "nn" => "no",
+        string value => value,
+        _ => language.ToLowerInvariant(),
+    };
 }
