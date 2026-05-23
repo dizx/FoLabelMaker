@@ -1,4 +1,5 @@
 using System.Xml.Linq;
+using System.Xml;
 using FoLabelMaker.Core.Scanning;
 using FoLabelMaker.Core.Xpp;
 
@@ -71,6 +72,7 @@ public sealed class FoMetadataTextScanner
                 Reasons = ["Important metadata text is missing.", "Proposed text derived from element name."],
                 XmlPath = BuildXmlPath(element),
                 XmlElementName = element.Name.LocalName,
+                LineNumber = GetLineNumber(element),
             });
         }
 
@@ -95,6 +97,7 @@ public sealed class FoMetadataTextScanner
             Reasons = classification.Reasons,
             XmlPath = BuildXmlPath(element),
             XmlElementName = element.Name.LocalName,
+            LineNumber = GetLineNumber(element),
         };
     }
 
@@ -118,6 +121,7 @@ public sealed class FoMetadataTextScanner
                 XmlPath = BuildXmlPath(containerElement),
                 XmlElementName = containerElement.Name.LocalName,
                 CDataMarker = literal.FullLiteral,
+                LineNumber = GetLineNumber(containerElement) + CountLineBreaks(cdata.Value, literal.StartIndex),
             });
         }
 
@@ -128,6 +132,25 @@ public sealed class FoMetadataTextScanner
     {
         var parts = element.AncestorsAndSelf().Reverse().Select(current => current.Name.LocalName);
         return "/" + string.Join('/', parts);
+    }
+
+    private static int? GetLineNumber(XObject node)
+    {
+        return node is IXmlLineInfo lineInfo && lineInfo.HasLineInfo() ? lineInfo.LineNumber : null;
+    }
+
+    private static int CountLineBreaks(string value, int endIndex)
+    {
+        var lineBreaks = 0;
+        for (var index = 0; index < Math.Min(value.Length, endIndex); index++)
+        {
+            if (value[index] == '\n')
+            {
+                lineBreaks++;
+            }
+        }
+
+        return lineBreaks;
     }
 
     private static string HumanizeName(string value)

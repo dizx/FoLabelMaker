@@ -7,7 +7,7 @@ namespace FoLabelMaker.Core.Scanning;
 
 public sealed class MetadataScanner
 {
-    private static readonly string[] SupportedFolders = ["AxClass", "AxTable", "AxForm", "AxMenuItemDisplay", "AxMenuItemOutput", "AxMenuItemAction", "AxEdt", "AxEnum", "AxReport"];
+    private static readonly string[] SupportedFolders = ["AxClass", "AxTable", "AxForm", "AxMenuItemDisplay", "AxMenuItemOutput", "AxMenuItemAction", "AxEdt", "AxEnum", "AxReport", "AxReportDesign"];
     private static readonly HashSet<string> IgnoredFolderNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "XppMetadata",
@@ -51,7 +51,7 @@ public sealed class MetadataScanner
                 try
                 {
                     await using var stream = File.OpenRead(filePath);
-                    var document = await XDocument.LoadAsync(stream, LoadOptions.PreserveWhitespace, cancellationToken);
+                    var document = await XDocument.LoadAsync(stream, LoadOptions.PreserveWhitespace | LoadOptions.SetLineInfo, cancellationToken);
                     var root = document.Root;
                     if (root is null)
                     {
@@ -81,7 +81,10 @@ public sealed class MetadataScanner
                         }
                         else
                         {
-                            report.IgnoredCandidates.Add(candidate);
+                            if (ShouldReportIgnoredCandidate(candidate))
+                            {
+                                report.IgnoredCandidates.Add(candidate);
+                            }
                         }
                     }
 
@@ -207,6 +210,61 @@ public sealed class MetadataScanner
         }
 
         return false;
+    }
+
+    private static bool ShouldReportIgnoredCandidate(TextCandidate candidate)
+    {
+        if (candidate.Kind == TextCandidateKind.ExistingLabelReference)
+        {
+            return false;
+        }
+
+        if (candidate.Kind == TextCandidateKind.XppStringLiteral && candidate.Confidence <= 0.4)
+        {
+            return false;
+        }
+
+        var lowValueReasons = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "Text is empty.",
+            "Existing label reference.",
+            "Contains no letters.",
+            "Number-only string.",
+            "Placeholder-only string.",
+            "Contains placeholders and separators only.",
+            "Looks like a URL.",
+            "Looks like a file path.",
+            "Looks like a file extension.",
+            "Looks like a GUID.",
+            "Looks like JSON.",
+            "Looks like a JSON fragment.",
+            "Looks like a JSON path.",
+            "Looks like a CSS or HTML attribute fragment.",
+            "Looks like a MIME type.",
+            "Looks like an HTTP method.",
+            "Looks like an HTTP header name.",
+            "Looks like a key, token, or hash.",
+            "Looks like an alphanumeric code identifier.",
+            "Looks like an API token.",
+            "Looks like embedded XML or HTML.",
+            "Looks like an XML tag fragment.",
+            "Looks like a JSON delimiter fragment.",
+            "Looks like escaped whitespace.",
+            "Looks like a format-only string.",
+            "Looks like a code expression.",
+            "Looks like a URL query string fragment.",
+            "Looks like a character whitelist for string filtering.",
+            "Looks like a structured technical identifier.",
+            "Looks like a structured technical identifier with a qualifier.",
+            "Looks like a short technical constant.",
+            "Looks like a technical X++ string literal.",
+            "Looks like a technical ProgID or dotted identifier.",
+            "Looks like a JSON or XML property name.",
+            "Looks like a code identifier.",
+            "Looks like a code snippet or generated code template.",
+        };
+
+        return !candidate.Reasons.Any(lowValueReasons.Contains);
     }
 }
 

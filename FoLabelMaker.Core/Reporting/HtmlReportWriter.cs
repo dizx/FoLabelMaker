@@ -63,7 +63,7 @@ public sealed class HtmlReportWriter
             ("Validation Errors", report.ValidationErrors.Count.ToString())
         ]));
         body.Append(Section("Detected Candidates", CandidateTable(report.DetectedCandidates)));
-        body.Append(Section("Ignored Candidates", CandidateTable(report.IgnoredCandidates)));
+        body.Append(Section("Ignored Candidates (Not Planned)", CandidateTable(report.IgnoredCandidates)));
         body.Append(Section("Missing Text Proposals", CandidateTable(report.MissingTextProposals)));
         body.Append(Section("Improvement Suggestions", ImprovementTable(report.ImprovementSuggestions)));
         body.Append(Section("Validation Errors", StringList(report.ValidationErrors)));
@@ -145,8 +145,8 @@ public sealed class HtmlReportWriter
         }
 
         var rows = candidateList.Select(candidate =>
-            $"<tr><td><code>{Encode(candidate.SourceFilePath)}</code></td><td>{Encode(candidate.ElementType)}</td><td>{Encode(candidate.ElementName)}</td><td>{Encode(candidate.PropertyOrMethod)}</td><td>{Encode(candidate.OriginalText)}</td><td>{Encode(string.Join(" | ", candidate.Reasons))}</td></tr>");
-        return Table(["File", "Element Type", "Element Name", "Property", "Text", "Reasons"], rows);
+            $"<tr><td><code>{Encode(candidate.SourceFilePath)}</code></td><td>{Encode(candidate.LineNumber?.ToString() ?? string.Empty)}</td><td>{Encode(candidate.ElementType)}</td><td>{Encode(candidate.ElementName)}</td><td>{Encode(candidate.PropertyOrMethod)}</td><td>{Encode(candidate.OriginalText)}</td><td>{Encode(string.Join(" | ", candidate.Reasons))}</td></tr>");
+        return Table(["File", "Line", "Element Type", "Element Name", "Property", "Text", "Reasons"], rows);
     }
 
     private static string PlanChangeTable(IEnumerable<LabelChange> changes)
