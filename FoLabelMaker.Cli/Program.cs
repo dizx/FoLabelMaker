@@ -3,6 +3,7 @@ using FoLabelMaker.Core.Ai;
 using FoLabelMaker.Core.Configuration;
 using FoLabelMaker.Core.Improvement;
 using FoLabelMaker.Core.Labels;
+using FoLabelMaker.Core.Merging;
 using FoLabelMaker.Core.Metadata;
 using FoLabelMaker.Core.Planning;
 using FoLabelMaker.Core.Reporting;
@@ -20,6 +21,7 @@ internal static class CliProgram
         "overwrite",
         "reuse-similar-labels",
         "reuse-similar",
+        "apply",
     ];
 
     private static readonly Dictionary<string, string> LanguageAliases = new(StringComparer.OrdinalIgnoreCase)
@@ -108,6 +110,15 @@ internal static class CliProgram
                     var improvements = await service.ImproveAsync(options, cancellationTokenSource.Token);
                     Console.WriteLine($"Generated {improvements.Count} improvement suggestions.");
                     return 0;
+                case "merge":
+                    var mergeReport = await service.MergeAsync(options, cancellationTokenSource.Token);
+                    Console.WriteLine($"Planned {mergeReport.Mappings.Count} label reference merges across {mergeReport.ChangedFiles.Count} files.");
+                    if (!mergeReport.Applied)
+                    {
+                        Console.WriteLine("Dry run only. Re-run with -apply to write changes.");
+                    }
+
+                    return mergeReport.ValidationErrors.Count == 0 ? 0 : 2;
                 default:
                     Console.Error.WriteLine($"Unknown command: {command}");
                     PrintUsage();
@@ -183,6 +194,9 @@ internal static class CliProgram
             OutputPath = GetOptional(values, "output"),
             PlanPath = GetOptional(values, "plan"),
             OpenAiModel = GetOptional(values, "openai-model") ?? appSettings.OpenAi.Model,
+            SourceLabelPrefixes = GetMany(values, "source-prefix").Concat(GetMany(values, "source-label-prefix")).ToList(),
+            SourceLabelFileIds = GetMany(values, "source-file").Concat(GetMany(values, "source-label-file")).ToList(),
+            ApplyChanges = GetBool(values, "apply"),
             OverwriteTranslations = GetNullableBool(values, "overwrite") ?? GetNullableBool(values, "overwrite-translations") ?? appSettings.LabelMaker.OverwriteTranslations ?? false,
             ReuseSimilarLabels = GetNullableBool(values, "reuse-similar") ?? GetNullableBool(values, "reuse-similar-labels") ?? appSettings.LabelMaker.ReuseSimilarLabels ?? false,
         };
@@ -218,7 +232,8 @@ internal static class CliProgram
             new HtmlReportWriter(),
             new TextImprovementSuggester(),
             new OpenAiTextAiService(new HttpClient(), openAiOptions),
-            labelFileWriter);
+            labelFileWriter,
+            new LabelMerger(labelFileReader, labelFileWriter, new LabelIdGenerator()));
     }
 
     private static string? GetOptional(Dictionary<string, List<string>> values, string key) => values.TryGetValue(key, out var entries) ? entries.LastOrDefault() : null;
@@ -269,6 +284,7 @@ internal static class CliProgram
             "scan" => $"{normalizedModelName}-scan.json",
             "plan" => $"{normalizedModelName}-plan.json",
             "improve" => $"{normalizedModelName}-improvements.json",
+            "merge" => $"{normalizedModelName}-merge.json",
             _ => null,
         };
 
@@ -292,6 +308,8 @@ internal static class CliProgram
             OutputPath = defaultOutputPath,
             PlanPath = options.PlanPath,
             OpenAiModel = options.OpenAiModel,
+            SourceLabelPrefixes = options.SourceLabelPrefixes,
+            SourceLabelFileIds = options.SourceLabelFileIds,
         };
     }
 
@@ -306,6 +324,17 @@ internal static class CliProgram
         if (usesTranslationOptions && !string.Equals(command, "translate", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException("Options -target-lang, -target-language, and translation overwrite settings are only valid with the translate command.");
+        }
+
+        if (options.ApplyChanges && !string.Equals(command, "merge", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Option -apply is only valid with the merge command.");
+        }
+
+        var usesMergeOptions = options.SourceLabelPrefixes.Count > 0 || options.SourceLabelFileIds.Count > 0;
+        if (usesMergeOptions && !string.Equals(command, "merge", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Options -source-prefix, -source-label-prefix, -source-file, and -source-label-file are only valid with the merge command.");
         }
     }
 
@@ -344,6 +373,8 @@ internal static class CliProgram
             OutputPath = options.OutputPath,
             PlanPath = resolvedPlanPath,
             OpenAiModel = options.OpenAiModel,
+            SourceLabelPrefixes = options.SourceLabelPrefixes,
+            SourceLabelFileIds = options.SourceLabelFileIds,
         };
     }
 
@@ -403,6 +434,8 @@ internal static class CliProgram
             OutputPath = options.OutputPath,
             PlanPath = options.PlanPath,
             OpenAiModel = options.OpenAiModel,
+            SourceLabelPrefixes = options.SourceLabelPrefixes,
+            SourceLabelFileIds = options.SourceLabelFileIds,
         };
     }
 
@@ -475,5 +508,6 @@ internal static class CliProgram
         Console.WriteLine("FoLabelMaker apply -metadata-root <path> -plan label-plan.json");
         Console.WriteLine("FoLabelMaker translate -metadata-root <path> -model <modelName> -label-prefix <prefix> -base-lang en-US -target-lang nb-NO");
         Console.WriteLine("FoLabelMaker improve -metadata-root <path> -model <modelName> -output improvements.json");
+        Console.WriteLine("FoLabelMaker merge -metadata-root <path> -model <modelName> -label-prefix <targetFileId> -base-lang nb-NO [-source-prefix NewLabel] [-apply]");
     }
 }

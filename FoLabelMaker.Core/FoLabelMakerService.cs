@@ -3,6 +3,7 @@ using FoLabelMaker.Core.Ai;
 using FoLabelMaker.Core.Configuration;
 using FoLabelMaker.Core.Improvement;
 using FoLabelMaker.Core.Labels;
+using FoLabelMaker.Core.Merging;
 using FoLabelMaker.Core.Planning;
 using FoLabelMaker.Core.Reporting;
 using FoLabelMaker.Core.Scanning;
@@ -20,6 +21,7 @@ public sealed class FoLabelMakerService
     private readonly TextImprovementSuggester _textImprovementSuggester;
     private readonly ITextAiService _textAiService;
     private readonly LabelFileWriter _labelFileWriter;
+    private readonly LabelMerger _labelMerger;
 
     public FoLabelMakerService(
         MetadataScanner metadataScanner,
@@ -30,7 +32,8 @@ public sealed class FoLabelMakerService
         HtmlReportWriter htmlReportWriter,
         TextImprovementSuggester textImprovementSuggester,
         ITextAiService textAiService,
-        LabelFileWriter labelFileWriter)
+        LabelFileWriter labelFileWriter,
+        LabelMerger labelMerger)
     {
         _metadataScanner = metadataScanner;
         _labelFileReader = labelFileReader;
@@ -41,6 +44,7 @@ public sealed class FoLabelMakerService
         _textImprovementSuggester = textImprovementSuggester;
         _textAiService = textAiService;
         _labelFileWriter = labelFileWriter;
+        _labelMerger = labelMerger;
     }
 
     public async Task<ScanReport> ScanAsync(LabelMakerOptions options, CancellationToken cancellationToken)
@@ -155,6 +159,35 @@ public sealed class FoLabelMakerService
         }
 
         return suggestions;
+    }
+
+    public async Task<LabelMergeReport> MergeAsync(LabelMakerOptions options, CancellationToken cancellationToken)
+    {
+        var scanResult = await _metadataScanner.ScanAsync(options.MetadataRootPath, options.ModelName, cancellationToken);
+        var report = await _labelMerger.MergeAsync(
+            options.MetadataRootPath,
+            scanResult.ModelRootPath,
+            Path.GetFileName(scanResult.ModelRootPath),
+            options.NormalizedLabelPrefix,
+            options.BaseLanguage,
+            options.SourceLabelPrefixes,
+            options.SourceLabelFileIds,
+            options.ApplyChanges,
+            cancellationToken);
+
+        if (!string.IsNullOrWhiteSpace(options.OutputPath))
+        {
+            var outputPath = ResolveOutputPath(options.OutputPath, options.MetadataRootPath);
+            await _reportWriter.WriteAsync(report, outputPath, cancellationToken);
+            var htmlOutputPath = await _htmlReportWriter.WriteCompanionHtmlAsync(report, outputPath, cancellationToken);
+            Console.WriteLine($"Wrote JSON report: {outputPath}");
+            if (!string.IsNullOrWhiteSpace(htmlOutputPath))
+            {
+                Console.WriteLine($"Wrote HTML report: {htmlOutputPath}");
+            }
+        }
+
+        return report;
     }
 
     private static string ResolveOutputPath(string outputPath, string requestedRootPath)

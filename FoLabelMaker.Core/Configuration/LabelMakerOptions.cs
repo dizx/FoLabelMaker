@@ -17,6 +17,8 @@ public sealed class LabelMakerOptions
     public string? OutputPath { get; init; }
     public string? PlanPath { get; init; }
     public string? OpenAiModel { get; init; }
+    public IReadOnlyList<string> SourceLabelPrefixes { get; init; } = [];
+    public IReadOnlyList<string> SourceLabelFileIds { get; init; } = [];
 
     [JsonIgnore]
     public string NormalizedLabelPrefix => LabelPrefix.StartsWith('@') ? LabelPrefix[1..] : LabelPrefix;
