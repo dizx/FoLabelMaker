@@ -96,7 +96,12 @@ public sealed partial class OpenAiTextAiService : ITextAiService
             requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
             using var response = await _httpClient.SendAsync(requestMessage, cancellationToken);
             Console.WriteLine($"OpenAI response status: {(int)response.StatusCode} {response.StatusCode}");
-            response.EnsureSuccessStatusCode();
+            if (!response.IsSuccessStatusCode)
+            {
+                Console.WriteLine($"Skipping translation batch because OpenAI returned {(int)response.StatusCode} {response.StatusCode}. Previously validated batches will still be saved.");
+                continue;
+            }
+
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             var completion = JsonDocument.Parse(body);
             var content = completion.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? "{}";
@@ -231,7 +236,12 @@ public sealed partial class OpenAiTextAiService : ITextAiService
             requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
             using var response = await _httpClient.SendAsync(requestMessage, cancellationToken);
             Console.WriteLine($"OpenAI validation response status: {(int)response.StatusCode} {response.StatusCode}");
-            response.EnsureSuccessStatusCode();
+            if (!response.IsSuccessStatusCode)
+            {
+                Console.WriteLine($"Skipping validation batch because OpenAI returned {(int)response.StatusCode} {response.StatusCode}. These translations were not accepted or cached.");
+                continue;
+            }
+
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             var completion = JsonDocument.Parse(body);
             var content = completion.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? "{}";
